@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #1a1a1a;
+      }
+      #canvas {
+        width: 100%;
+        height: 100vh;
+      }
+      #log {
+        position: fixed;
+        right: 10px;
+        top: 10px;
+        width: 300px;
+        height: 400px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #00ff00;
+        padding: 10px;
+        font-family: monospace;
+        overflow-y: auto;
+        border-radius: 5px;
+      }
+      #controls {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+      }
+      .slider-container {
+        margin: 10px 0;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <div id="log"></div>
+    <div id="controls">
+      <div class="slider-container">
+        <label for="threatRate">Threat Rate (seconds):</label>
+        <input
+          type="range"
+          id="threatRate"
+          min="5"
+          max="30"
+          value="15"
+          step="1"
+        />
+        <span id="threatRateValue">15s</span>
+      </div>
+      <div class="slider-container">
+        <label for="messageSpeed">Message Speed:</label>
+        <input
+          type="range"
+          id="messageSpeed"
+          min="1"
+          max="10"
+          value="3"
+          step="1"
+        />
+        <span id="messageSpeedValue">3</span>
+      </div>
+      <div class="slider-container">
+        <label for="mitigationTime">Mitigation Time (seconds):</label>
+        <input
+          type="range"
+          id="mitigationTime"
+          min="5"
+          max="30"
+          value="10"
+          step="1"
+        />
+        <span id="mitigationTimeValue">10s</span>
+      </div>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const log = document.getElementById("log");
+
+      const threatRateSlider = document.getElementById("threatRate");
+      const messageSpeedSlider = document.getElementById("messageSpeed");
+      const mitigationTimeSlider = document.getElementById("mitigationTime");
+      const threatRateValue = document.getElementById("threatRateValue");
+      const messageSpeedValue = document.getElementById("messageSpeedValue");
+      const mitigationTimeValue = document.getElementById(
+        "mitigationTimeValue"
+      );
+
+      threatRateSlider.addEventListener("input", () => {
+        threatRateValue.textContent = `${threatRateSlider.value}s`;
+      });
+      messageSpeedSlider.addEventListener("input", () => {
+        messageSpeedValue.textContent = messageSpeedSlider.value;
+      });
+      mitigationTimeSlider.addEventListener("input", () => {
+        mitigationTimeValue.textContent = `${mitigationTimeSlider.value}s`;
+      });
+
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+
+      class Device {
+        constructor(type, id, x, y) {
+          this.type = type;
+          this.id = id;
+          this.x = x;
+          this.y = y;
+          this.radius = 30;
+          this.color = "#4CAF50";
+          this.infected = false;
+          this.securityLevel = 1;
+          this.messages = [];
+          this.lastThreatTime = 0;
+        }
+
+        draw(ctx) {
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+          ctx.fillStyle = this.infected ? "#ff4444" : this.color;
+          ctx.fill();
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = "#fff";
+          ctx.font = "12px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText(`${this.type} ${this.id}`, this.x, this.y);
+          ctx.fillText(`SL: ${this.securityLevel}`, this.x, this.y + 15);
+
+          this.messages = this.messages.filter((msg) => {
+            msg.draw(ctx);
+            msg.update();
+            return !msg.finished;
+          });
+        }
+      }
+
+      class Message {
+        constructor(from, to, type) {
+          this.from = from;
+          this.to = to;
+          this.type = type;
+          this.progress = 0;
+          this.finished = false;
+          this.onComplete = null;
+        }
+
+        update() {
+          const speed = 0.005 / (11 - messageSpeedSlider.value);
+          this.progress += speed;
+          if (this.progress >= 1) {
+            this.finished = true;
+            if (this.onComplete) {
+              this.onComplete();
+            }
+          }
+        }
+
+        draw(ctx) {
+          const startX = this.from.x;
+          const startY = this.from.y;
+          const endX = this.to.x;
+          const endY = this.to.y;
+
+          const currentX = startX + (endX - startX) * this.progress;
+          const currentY = startY + (endY - startY) * this.progress;
+
+          ctx.beginPath();
+          ctx.arc(currentX, currentY, 5, 0, Math.PI * 2);
+          ctx.fillStyle = this.getMessageColor();
+          ctx.fill();
+        }
+
+        getMessageColor() {
+          switch (this.type) {
+            case "threat":
+              return "#ff0000";
+            case "mitigation":
+              return "#00ff00";
+            case "security":
+              return "#ffff00";
+            default:
+              return "#ffffff";
+          }
+        }
+      }
+
+      class NetworkVisualizer {
+        constructor() {
+          this.devices = [];
+          this.switch = null;
+          this.lastThreatTime = 0;
+          this.setupNetwork();
+        }
+
+        setupNetwork() {
+          const centerX = canvas.width / 2;
+          const centerY = canvas.height / 2;
+          this.switch = new Device("Switch", 1, centerX, centerY);
+          this.switch.color = "#2196F3";
+
+          const devices = [
+            ["Router", 1],
+            ["Laptop", 1],
+            ["Laptop", 2],
+            ["Phone", 1],
+            ["Phone", 2],
+          ];
+
+          const radius = 200;
+          const angleStep = (Math.PI * 2) / devices.length;
+
+          devices.forEach((dev, i) => {
+            const angle = i * angleStep;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            this.devices.push(new Device(dev[0], dev[1], x, y));
+          });
+        }
+
+        simulateThreat() {
+          const currentTime = Date.now();
+          const threatInterval = threatRateSlider.value * 1000;
+
+          if (currentTime - this.lastThreatTime > threatInterval) {
+            const device =
+              this.devices[Math.floor(Math.random() * this.devices.length)];
+            if (!device.infected) {
+              this.lastThreatTime = currentTime;
+              device.infected = true;
+              this.addLog(`⚠️ Threat detected on ${device.type} ${device.id}`);
+
+              // Step 1: Device sends threat message to switch
+              const threatMessage = new Message(device, this.switch, "threat");
+              device.messages.push(threatMessage);
+
+              // Step 2: After switch receives threat message, it broadcasts to all devices
+              threatMessage.onComplete = () => {
+                this.addLog(
+                  `📡 Switch received threat alert from ${device.type} ${device.id}`
+                );
+
+                // Broadcast security messages to all devices
+                this.devices.forEach((dev) => {
+                  const broadcastMessage = new Message(
+                    this.switch,
+                    dev,
+                    dev === device ? "mitigation" : "security"
+                  );
+                  this.switch.messages.push(broadcastMessage);
+
+                  if (dev === device) {
+                    this.addLog(
+                      `🛡️ Starting threat mitigation on ${device.type} ${device.id}`
+                    );
+                  } else {
+                    broadcastMessage.onComplete = () => {
+                      dev.securityLevel = Math.min(dev.securityLevel + 1, 3);
+                    };
+                  }
+                });
+
+                // Set timer for threat mitigation
+                const mitigationTime = mitigationTimeSlider.value * 1000;
+                setTimeout(() => {
+                  device.infected = false;
+                  this.addLog(
+                    `✅ Threat mitigated on ${device.type} ${device.id}`
+                  );
+
+                  // Send confirmation message from mitigated device to switch
+                  const confirmationMessage = new Message(
+                    device,
+                    this.switch,
+                    "security"
+                  );
+                  device.messages.push(confirmationMessage);
+
+                  confirmationMessage.onComplete = () => {
+                    this.addLog(
+                      `📡 Switch received mitigation confirmation from ${device.type} ${device.id}`
+                    );
+
+                    // Switch broadcasts security level reduction to all devices
+                    this.devices.forEach((dev) => {
+                      if (dev !== device) {
+                        const securityReductionMessage = new Message(
+                          this.switch,
+                          dev,
+                          "security"
+                        );
+                        this.switch.messages.push(securityReductionMessage);
+
+                        securityReductionMessage.onComplete = () => {
+                          dev.securityLevel = Math.max(
+                            dev.securityLevel - 1,
+                            1
+                          );
+                          this.addLog(
+                            `📉 Reducing security level on ${dev.type} ${dev.id} to ${dev.securityLevel}`
+                          );
+                        };
+                      }
+                    });
+                  };
+                }, mitigationTime);
+              };
+            }
+          }
+        }
+
+        addLog(message) {
+          const entry = document.createElement("div");
+          entry.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+          log.appendChild(entry);
+          log.scrollTop = log.scrollHeight;
+
+          while (log.children.length > 20) {
+            log.removeChild(log.firstChild);
+          }
+        }
+
+        draw() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          this.devices.forEach((device) => {
+            ctx.beginPath();
+            ctx.moveTo(this.switch.x, this.switch.y);
+            ctx.lineTo(device.x, device.y);
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          });
+
+          this.switch.draw(ctx);
+          this.devices.forEach((device) => device.draw(ctx));
+        }
+
+        animate() {
+          this.simulateThreat();
+          this.draw();
+          requestAnimationFrame(() => this.animate());
+        }
+      }
+
+      const visualizer = new NetworkVisualizer();
+      visualizer.animate();
+    </script>
+  </body>
+</html>
