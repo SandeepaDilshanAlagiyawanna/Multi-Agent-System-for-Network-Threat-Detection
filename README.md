@@ -76,7 +76,7 @@ The system demonstrates how a central switch agent and multiple device agents ca
 ## **Technologies Used**
 
 - **Programming Language**: Python
-- **Framework**: PADE (Platform for Agents Development and Execution)
+- **Framework**: [PADE](https://github.com/grei-ufc/pade) (Platform for Agents Development and Execution)
 - **Threading**: For concurrent threat detection, mitigation, and monitoring.
 
 ---
